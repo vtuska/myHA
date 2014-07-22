@@ -129,7 +129,7 @@ if (($#ARGV > 0) && ($ARGV[1] eq "--yes-I-know-what-I-am-doing" )) {
 }
 ###
 
-node::dolog("Current threadid(active): ".$anode->db_get_threadid());
+node::dolog("Current threadid(active): ".$anode->get_dict('db')->{'dbh'}->{'mysql_thread_id'});
 node::dolog('Trying to get read lock on the active node...', 1);
 $anode->db_read_lock(0,1);
 $anode->db_read_lock(1,0);
@@ -144,7 +144,7 @@ if ($anode->db_get_dict('select @@global.read_only')->[0]->{'@@global.read_only'
 	node::error('Can not set @@global.read_only to 1!');
 }
 
-node::dolog("Current threadid(passive): ".$pnode->db_get_threadid());
+node::dolog("Current threadid(passive): ".$pnode->get_dict('db')->{'dbh'}->{'mysql_thread_id'});
 node::dolog('Trying to get read lock on the passive node...', 1);
 $pnode->db_read_lock(0,1);
 $pnode->db_read_lock(1,0);
@@ -194,7 +194,10 @@ if ($rc != 0) {
 
 node::dolog("Release virtual ip address on the active node...", 1);
 ($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/ip addr list');
-($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/ip addr del '."$cfg->{'service'}->{'virtip'}".'/'."$cfg->{'service'}->{'virtnet'}".' dev '.$anode->get_virtif());
+
+foreach my $tmp (@{$cfg->{'service'}->{'virts'}}) {
+	($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/ip addr del '.$tmp->{'virtip'}.'/'.$tmp->{'virtnet'}.' dev '.$anode->get_dict('db')->{'virtif'});
+}
 
 node::dolog('Setting read/write mode on the (ex)passive node...', 1);
 node::dolog('set @@global.read_only=0', 1);
@@ -207,24 +210,26 @@ if ($pnode->db_get_dict('select @@global.read_only')->[0]->{'@@global.read_only'
 
 node::dolog("Setting virtual ip address on the (ex)passive node...", 1);
 ($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/ip addr list');
-($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/ip addr add '."$cfg->{'service'}->{'virtip'}".'/'."$cfg->{'service'}->{'virtnet'}".' dev '.$pnode->get_virtif().' label '.$pnode->get_virtlabel());
-($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/arping -A -c 4 -I '.$pnode->get_virtif().' '."$cfg->{'service'}->{'virtip'}");
+foreach my $tmp (@{$cfg->{'service'}->{'virts'}}) {
+	($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/ip addr add '.$tmp->{'virtip'}.'/'.$tmp->{'virtnet'}.' dev '.$pnode->get_dict('db')->{'virtif'}.' label '.$pnode->get_dict('db')->{'virtlabel'});
+	($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/arping -A -c 4 -I '.$pnode->get_dict('db')->{'virtif'}.' '.$tmp->{'virtip'});
 
-node::dolog('Checking virtual ip address accessibility from the (ex)active node...', 1);
-($outlines, $errlines, $rc) = $anode->cmd_execute('/bin/ping -c 3 '.$cfg->{'service'}->{'virtip'});
-if ($rc != 0) {
-	node::error("Check the virtip accessibility ASAP!");
-}
+	node::dolog('Checking virtual ip address accessibility from the (ex)active node...', 1);
+	($outlines, $errlines, $rc) = $anode->cmd_execute('/bin/ping -c 1 '.$tmp->{'virtip'});
+	if ($rc != 0) {
+		node::error("Check the virtip accessibility ASAP!");
+	}
 
-($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/arp -an|grep '.$cfg->{'service'}->{'virtip'});
+	($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/arp -an|grep '.$tmp->{'virtip'});
 
-if (defined($pnode->get_virtport())) {
-	node::dolog('Setting port redirection for non standard port on the (ex)passive node...', 1);
-	($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/iptables -A PREROUTING -t nat -i '.$pnode->get_virtif().' -p tcp --dst '.$cfg->{'service'}->{'virtip'}.' --dport '.$pnode->get_virtport().' -j REDIRECT --to-port '.$pnode->get_port());
-}
-if (defined($anode->get_virtport())) {
-	node::dolog('Removing port redirection for non standard port on the (ex)active node...', 1);
-	($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/iptables -D PREROUTING -t nat -i '.$anode->get_virtif().' -p tcp --dst '.$cfg->{'service'}->{'virtip'}.' --dport '.$anode->get_virtport().' -j REDIRECT --to-port '.$anode->get_port());
+	if (defined($tmp->{'virtport'}) && ($pnode->get_dict('db')->{'port'} ne $tmp->{'virtport'})) {
+		node::dolog('Setting port redirection for non standard port on the (ex)passive node...', 1);
+		($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/iptables -A PREROUTING -t nat -i '.$pnode->get_dict('db')->{'virtif'}.' -p tcp --dst '.$tmp->{'virtip'}.' --dport '.$tmp->{'virtport'}.' -j REDIRECT --to-port '.$pnode->get_dict('db')->{'port'});
+	}
+	if (defined($tmp->{'virtport'}) && ($anode->get_dict('db')->{'port'} ne $tmp->{'virtport'})) {
+		node::dolog('Removing port redirection for non standard port on the (ex)active node...', 1);
+		($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/iptables -D PREROUTING -t nat -i '.$anode->get_dict('db')->{'virtif'}.' -p tcp --dst '.$tmp->{'virtip'}.' --dport '.$tmp->{'virtport'}.' -j REDIRECT --to-port '.$anode->get_dict('db')->{'port'});
+	}
 }
 
 print '', RESET;

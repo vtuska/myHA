@@ -24,8 +24,8 @@ use warnings;
 
 my $cfg = {
 		'service' => {
-			'virtip' => '172.16.72.100',
-			'virtnet' => '24',
+			'virts' => [{ 'virtip' => '172.16.72.100', 'virtnet' => '24', 'virtport' => 3306 },
+					{ 'virtip' => '172.16.72.101', 'virtnet' => '24', 'virtport' => 3306 }],
 			'lagretry' => 3,
 			'lagsleep' => 2
 		},
@@ -44,11 +44,12 @@ my $cfg = {
 				'ssh' => {
 					'user' => 'viktor',
 					'hostname' => '172.16.72.136',
+					'port' => 22,
 					'timeout' => 24,
 					'socket' => '~/.ssh/master0.sock'
 				},
 				'sudo' => {
-					'password' => undef
+					'password' => 'sasword'
 				}
 			},
 			{
@@ -60,17 +61,17 @@ my $cfg = {
 					'database' => 'mysql',
 					'timeout' => 2,
 					'maxretry' => 3,
-					'virtif' => 'eth0',
-					'virtport' => 3306
+					'virtif' => 'eth0'
 				},
 				'ssh' => {
 					'user' => 'viktor',
 					'hostname' => '172.16.72.137',
+					'port' => 22,
 					'timeout' => 24,
 					'socket' => '~/.ssh/master1.sock'
 				},
 				'sudo' => {
-					'password' => undef
+					'password' => 'sasword'
 				}
 			},
 		]

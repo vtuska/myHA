@@ -54,57 +54,58 @@ sub new {
 
 	dolog("node new() start");
 
-	$self->{'node'} = $node;
-	$self->{'db'}->{'hostname'} = $config->{'db'}->{'hostname'};
-	$self->{'db'}->{'dsn'} = "DBI:mysql:database=$config->{'db'}->{'database'};host=$config->{'db'}->{'hostname'};port=$config->{'db'}->{'port'}";
-	$self->{'db'}->{'user'} = $config->{'db'}->{'user'};
-	$self->{'db'}->{'port'} = $config->{'db'}->{'port'};
+	$self->{'dict'}->{'node'} = $node;
+	$self->{'dict'}->{'db'}->{'hostname'} = $config->{'db'}->{'hostname'};
+	$self->{'dict'}->{'db'}->{'dsn'} = "DBI:mysql:database=$config->{'db'}->{'database'};host=$config->{'db'}->{'hostname'};port=$config->{'db'}->{'port'}";
+	$self->{'dict'}->{'db'}->{'user'} = $config->{'db'}->{'user'};
+	$self->{'dict'}->{'db'}->{'port'} = $config->{'db'}->{'port'};
 
 	if (!defined($config->{'db'}->{'password'})) {
-		print "DB password (".$self->{'node'}." ".$self->{'db'}->{'hostname'}."): ";
+		print "DB password (".$self->{'dict'}->{'node'}." ".$self->{'dict'}->{'db'}->{'hostname'}."): ";
 		system('/bin/stty', '-echo');
-		$self->{'db'}->{'password'} = <STDIN>;
-		chomp($self->{'db'}->{'password'});
+		$self->{'dict'}->{'db'}->{'password'} = <STDIN>;
+		chomp($self->{'dict'}->{'db'}->{'password'});
 		system('/bin/stty', 'echo');
 	} else {
-		$self->{'db'}->{'password'} = $config->{'db'}->{'password'};
+		$self->{'dict'}->{'db'}->{'password'} = $config->{'db'}->{'password'};
 	}
 
-	$self->{'db'}->{'timeout'} = $config->{'db'}->{'timeout'};
-	$self->{'db'}->{'maxretry'} = $config->{'db'}->{'maxretry'};
-	$self->{'db'}->{'virtif'} = $config->{'db'}->{'virtif'};
+	$self->{'dict'}->{'db'}->{'timeout'} = $config->{'db'}->{'timeout'};
+	$self->{'dict'}->{'db'}->{'maxretry'} = $config->{'db'}->{'maxretry'};
+	$self->{'dict'}->{'db'}->{'virtif'} = $config->{'db'}->{'virtif'};
 	if (!defined($config->{'db'}->{'virtlabel'})) {
-		$self->{'db'}->{'virtlabel'} = $config->{'db'}->{'virtif'}.':'.$config->{'db'}->{'port'};
+		$self->{'dict'}->{'db'}->{'virtlabel'} = $config->{'db'}->{'virtif'}.':'.$config->{'db'}->{'port'};
 	} else {
-		$self->{'db'}->{'virtlabel'} = $config->{'db'}->{'virtlabel'};
+		$self->{'dict'}->{'db'}->{'virtlabel'} = $config->{'db'}->{'virtlabel'};
 	}
-	$self->{'db'}->{'virtport'} = $config->{'db'}->{'virtport'};
-	$self->{'db'}->{'dbh'} = DBI->connect($self->{'db'}->{'dsn'}, $self->{'db'}->{'user'}, $self->{'db'}->{'password'}, {'RaiseError' => 1, 'mysql_auto_reconnect' => 0});
+	$self->{'dict'}->{'db'}->{'virtport'} = $config->{'db'}->{'virtport'};
+	$self->{'dict'}->{'db'}->{'dbh'} = DBI->connect($self->{'dict'}->{'db'}->{'dsn'}, $self->{'dict'}->{'db'}->{'user'}, $self->{'dict'}->{'db'}->{'password'}, {'RaiseError' => 1, 'mysql_auto_reconnect' => 0});
 
-	$self->{'ssh'}->{'user'} = $config->{'ssh'}->{'user'};
-	$self->{'ssh'}->{'hostname'} = $config->{'ssh'}->{'hostname'};
-	$self->{'ssh'}->{'timeout'} = $config->{'ssh'}->{'timeout'};
-	$self->{'ssh'}->{'socket'} = $config->{'ssh'}->{'socket'};
+	$self->{'dict'}->{'ssh'}->{'user'} = $config->{'ssh'}->{'user'};
+	$self->{'dict'}->{'ssh'}->{'hostname'} = $config->{'ssh'}->{'hostname'};
+	$self->{'dict'}->{'ssh'}->{'port'} = $config->{'ssh'}->{'port'};
+	$self->{'dict'}->{'ssh'}->{'timeout'} = $config->{'ssh'}->{'timeout'};
+	$self->{'dict'}->{'ssh'}->{'socket'} = $config->{'ssh'}->{'socket'};
 
 	ssh_open_master($self);
 
 	if (!defined($config->{'sudo'}->{'password'})) {
-		print "Sudo password (".$self->{'node'}." ".$self->{'ssh'}->{'hostname'}."): ";
+		print "Sudo password (".$self->{'dict'}->{'node'}." ".$self->{'dict'}->{'ssh'}->{'hostname'}."): ";
 		system('/bin/stty', '-echo');
-		$self->{'sudo'}->{'password'} = <STDIN>;
+		$self->{'dict'}->{'sudo'}->{'password'} = <STDIN>;
 		system('/bin/stty', 'echo');
 	} else {
-		$self->{'sudo'}->{'password'} = $config->{'sudo'}->{'password'}."\n";
+		$self->{'dict'}->{'sudo'}->{'password'} = $config->{'sudo'}->{'password'}."\n";
 	}
 
-	my ($outlines, $errlines, $rc) = ssh_execute($self, "hostname");
+	my ($outlines, $errlines, $rc) = remote_execute($self, "hostname");
 
-	$self->{'ssh'}->{'real_hostname'} = @{$outlines}[1];
-	if ($self->{'ssh'}->{'real_hostname'} eq $_localhostname) {
+	$self->{'dict'}->{'ssh'}->{'real_hostname'} = @{$outlines}[1];
+	if ($self->{'dict'}->{'ssh'}->{'real_hostname'} eq $_localhostname) {
 		dolog("LOCAL");
-		$self->{'ssh'}->{'location'} = "LOCAL";
+		$self->{'dict'}->{'ssh'}->{'location'} = "LOCAL";
 	} else {
-		$self->{'ssh'}->{'location'} = "REMOTE";
+		$self->{'dict'}->{'ssh'}->{'location'} = "REMOTE";
 		dolog("REMOTE");
 	}
 
@@ -116,40 +117,21 @@ sub new {
 	return $self;
 }
 
-sub get_node {
+sub get_dict {
 	my $self = shift;
-	return $self->{'node'};
+	my $key = shift;
+	my $dict = shift || 'dict';
+
+	return $self->{$dict}->{$key};
 }
 
-sub get_port {
+sub set_dict {
 	my $self = shift;
-	return $self->{'db'}->{'port'};
-}
+	my $key = shift;
+	my $value = shift;
+	my $dict = shift || 'dict';
 
-sub get_virtport {
-	my $self = shift;
-	return $self->{'db'}->{'virtport'};
-}
-
-sub get_virtif {
-	my $self = shift;
-	return $self->{'db'}->{'virtif'};
-}
-
-sub get_virtlabel {
-	my $self = shift;
-	return $self->{'db'}->{'virtlabel'};
-}
-
-sub get_location {
-	my $self = shift;
-	return $self->{'ssh'}->{'location'};
-}
-
-sub db_get_threadid {
-	my $self = shift;
-
-	return $self->{'db'}->{'dbh'}->{'mysql_thread_id'};
+	$self->{$dict}->{$key} = $value;
 }
 
 sub db_info {
@@ -157,16 +139,16 @@ sub db_info {
 	dolog("db_info() start");
 
 no warnings;
-	dolog("Node: ".get_node($self)."
-	Host: $self->{'db'}->{'dbh'}->{'mysql_hostinfo'}
-	ServerInfo: $self->{'db'}->{'dbh'}->{'mysql_serverinfo'}
-	Stat: $self->{'db'}->{'dbh'}->{'mysql_stat'}
-	ProtoInfo: $self->{'db'}->{'dbh'}->{'mysql_protoinfo'}
-	ThreadId: $self->{'db'}->{'dbh'}->{'mysql_thread_id'}
-	Info: $self->{'db'}->{'dbh'}->{'mysql_info'}
-	InsertId: $self->{'db'}->{'dbh'}->{'mysql_insertid'}
-	Errno: $self->{'db'}->{'dbh'}->{'mysql_errno'}
-	Error: $self->{'db'}->{'dbh'}->{'mysql_error'}", 1);
+	dolog("Node: ".$self->{'dict'}->{'node'}."
+	Host: ".$self->{'dict'}->{'db'}->{'dbh'}->{'mysql_hostinfo'}."
+	ServerInfo: ".$self->{'dict'}->{'db'}->{'dbh'}->{'mysql_serverinfo'}."
+	Stat: ".$self->{'dict'}->{'db'}->{'dbh'}->{'mysql_stat'}."
+	ProtoInfo: ".$self->{'dict'}->{'db'}->{'dbh'}->{'mysql_protoinfo'}."
+	ThreadId: ".$self->{'dict'}->{'db'}->{'dbh'}->{'mysql_thread_id'}."
+	Info: ".$self->{'dict'}->{'db'}->{'dbh'}->{'mysql_info'}."
+	InsertId: ".$self->{'dict'}->{'db'}->{'dbh'}->{'mysql_insertid'}."
+	Errno: ".$self->{'dict'}->{'db'}->{'dbh'}->{'mysql_errno'}."
+	Error: ".$self->{'dict'}->{'db'}->{'dbh'}->{'mysql_error'}, 1);
 use warnings;
 
 	dolog("db_info() end");
@@ -204,26 +186,26 @@ sub warning {
 sub db_get_dict {
 	my $self = shift;
 	my $query = shift;
-	my $sth = $self->{'db'}->{'dbh'}->prepare($query);
+	my $timeout = shift;
+	my $sth;
 	my $dict = [];
 
 	dolog("db_get_dict() start");
-        if (!$sth || !$sth->execute) {
-             error("err: ".$self->{'db'}->{'dbh'}->err."\nerrstr: ".$self->{'db'}->{'dbh'}->errstr."\nstate: ".$self->{'db'}->{'dbh'}->state);
-	}
+	if ($sth = _db_execute($self, $query)) {
 
-	my $names = $sth->{'NAME'};
-	my $numFields = $sth->{'NUM_OF_FIELDS'};
-	my $row = 0;
-	while (my $value = $sth->fetchrow_arrayref) {
-		for (my $i = 0;  $i < $numFields;  $i++) {
-			$dict->[$row]->{$$names[$i]} = $$value[$i];
-			my $log = "row: ".$row.", column: ".$$names[$i].", value: ".(defined($$value[$i]) ? $$value[$i] : 'NULL');
-			dolog($log);
+		my $names = $sth->{'NAME'};
+		my $numFields = $sth->{'NUM_OF_FIELDS'};
+		my $row = 0;
+		while (my $value = $sth->fetchrow_arrayref) {
+			for (my $i = 0;  $i < $numFields;  $i++) {
+				$dict->[$row]->{$$names[$i]} = $$value[$i];
+				my $log = "row: ".$row.", column: ".$$names[$i].", value: ".(defined($$value[$i]) ? $$value[$i] : 'NULL');
+				dolog($log);
+			}
+			$row += 1;
 		}
-		$row += 1;
+		$sth->finish;
 	}
-	$sth->finish;
 
 	dolog("db_get_dict() end");
 	return $dict;
@@ -233,11 +215,16 @@ sub db_check_dict {
 	my $self = shift;
 	my $dict = shift;
 	my $key = shift;
-	my $value = shift;
+	my $value = shift || 'undef';
 	my $fatal = shift;
 
 	dolog("db_check_dict() start");
 	dolog("(".$key."/".$value.")", 1);
+
+	if (!defined($dict->{$key})) {
+		$dict->{$key} = 'NULL';
+	}
+
 	if ($dict->{$key} eq $value) {
 		print GREEN "OK ($value)\n";
 	} else {
@@ -256,13 +243,24 @@ sub db_execute {
 	my $self = shift;
 	my $query = shift;
 	my $timeout = shift;
-	my $sth = $self->{'db'}->{'dbh'}->prepare($query);
+	my $sth;
 
-	if (!defined($timeout)) {
-		$timeout = $_timeout;
+	dolog("db_execute(".$query.") start");
+	if ($sth = _db_execute($self, $query, $timeout)) {
+		$sth->finish;
 	}
 
-	dolog("db_execute(".$query.",".$timeout.") start");
+	dolog("db_execute() end");
+	return 0;
+}
+
+sub _db_execute {
+	my $self = shift;
+	my $query = shift;
+	my $timeout = shift || $self->{'dict'}->{'db'}->{'timeout'};
+	my $sth = $self->{'dict'}->{'db'}->{'dbh'}->prepare($query);
+ 
+	dolog("_db_execute(".$query.",".$timeout.") start");
 
 	my $mask = POSIX::SigSet->new( SIGALRM );
 	my $action = POSIX::SigAction->new(
@@ -274,19 +272,21 @@ sub db_execute {
 	sigaction( SIGALRM, $action, $oldaction );
 	eval {
 		alarm($timeout);
-		$sth->execute;
+
+		if (!$sth || !$sth->execute) {
+			error("err: ".$self->{'dict'}->{'db'}->{'dbh'}->err."\nerrstr: ".$self->{'dict'}->{'db'}->{'dbh'}->errstr."\nstate: ".$self->{'dict'}->{'db'}->{'dbh'}->state);
+		}
 		alarm(0);
 	};
 	alarm(0);
 	sigaction( SIGALRM, $oldaction );
-	$sth->finish;
 
-	dolog("db_execute() end");
+	dolog("_db_execute() end");
 
 	if ( $@ =~ /timeout/) { 
-		return 255;
+		error("Timeout err: ".$query." ".$@);
 	} else {
-		return 0;
+		return $sth;
 	}
 }
 
@@ -294,11 +294,11 @@ sub db_kill {
 	my $self = shift;
 
 	db_close($self);
-	$self->{'db'}->{'dbh'} = DBI->connect($self->{'db'}->{'dsn'}, $self->{'db'}->{'user'}, $self->{'db'}->{'password'}, {'RaiseError' => 1, 'mysql_auto_reconnect' => 0});
+	$self->{'dict'}->{'db'}->{'dbh'} = DBI->connect($self->{'dict'}->{'db'}->{'dsn'}, $self->{'dict'}->{'db'}->{'user'}, $self->{'dict'}->{'db'}->{'password'}, {'RaiseError' => 1, 'mysql_auto_reconnect' => 0});
 	foreach my $tmp (@{db_get_dict($self,'SELECT * FROM INFORMATION_SCHEMA.PROCESSLIST')}) {
-		if (($tmp->{'ID'} != $self->{'db'}->{'dbh'}->{'mysql_thread_id'}) && ($tmp->{'USER'} ne 'repl') && ($tmp->{'USER'} ne 'system user')) {
+		if (($tmp->{'ID'} != $self->{'dict'}->{'db'}->{'dbh'}->{'mysql_thread_id'}) && ($tmp->{'USER'} ne 'repl') && ($tmp->{'USER'} ne 'system user')) {
 			dolog('Murder '.$tmp->{'USER'}.'('.$tmp->{'ID'}.')', 1);
-			my $sth = $self->{'db'}->{'dbh'}->prepare("KILL $tmp->{'ID'}");
+			my $sth = $self->{'dict'}->{'db'}->{'dbh'}->prepare("KILL $tmp->{'ID'}");
 			$sth->execute;
 		}
 	}
@@ -309,18 +309,19 @@ sub db_read_lock {
 	my $fatal = shift;
 	my $kill = shift;
 	my $count = 0;
+my $sth;
 
 	dolog("db_read_lock() start");
 
-	while (db_execute($self, 'FLUSH TABLES WITH READ LOCK', $self->{'db'}->{'timeout'})) {
+	while (db_execute($self, 'FLUSH TABLES WITH READ LOCK', $self->{'dict'}->{'db'}->{'timeout'})) {
 		dolog("Trying to acquire read_lock...".$count);
 		$count += 1;
-		if ($count == $self->{'db'}->{'maxretry'}) {
+		if ($count == $self->{'dict'}->{'db'}->{'maxretry'}) {
 			if ($kill) {
 				db_kill($self);
 			}
 			if ($fatal) {
-				error("Can't acquire the GLOBAL READ LOCK in time (timeout: $self->{'db'}->{'timeout'}, maxretry: $self->{'db'}->{'maxretry'})!");
+				error("Can't acquire the GLOBAL READ LOCK in time (timeout: $self->{'dict'}->{'db'}->{'timeout'}, maxretry: $self->{'dict'}->{'db'}->{'maxretry'})!");
 			} else {
 				last;
 			}
@@ -333,7 +334,7 @@ sub db_close {
 	my $self = shift;
 
 	dolog("db_close() start");
-	$self->{'db'}->{'dbh'}->disconnect;
+	$self->{'dict'}->{'db'}->{'dbh'}->disconnect;
 	dolog("db_close() end");
 }
 
@@ -365,7 +366,7 @@ sub ssh_open_master {
 		open(STDOUT, '>', '/dev/null');
 		open(STDERR, '>', '/dev/null');
 
-		my $ssh_cmd = 'ssh -N -M -S '."$self->{'ssh'}->{'socket'}".' -l '."$self->{'ssh'}->{'user'}".' '."$self->{'ssh'}->{'hostname'}";
+		my $ssh_cmd = 'ssh -N -M -S '.$self->{'dict'}->{'ssh'}->{'socket'}.' -l '.$self->{'dict'}->{'ssh'}->{'user'}.' '.$self->{'dict'}->{'ssh'}->{'hostname'};
 		dolog("ssh_cmd: ".$ssh_cmd);
 		exec($ssh_cmd);
 		exit();
@@ -379,18 +380,18 @@ sub ssh_close_master {
 
 	open(STDOUT, '>', '/dev/null');
 	open(STDERR, '>', '/dev/null');
-	my $ssh_cmd = 'ssh -S '."$self->{'ssh'}->{'socket'}".' -l '."$self->{'ssh'}->{'user'}".' -O exit '."$self->{'ssh'}->{'hostname'}";
+	my $ssh_cmd = 'ssh -S '.$self->{'dict'}->{'ssh'}->{'socket'}.' -l '.$self->{'dict'}->{'ssh'}->{'user'}.' -O exit '.$self->{'dict'}->{'ssh'}->{'hostname'};
 	dolog("ssh_cmd: ".$ssh_cmd);
 	system($ssh_cmd);
 }
 
-sub ssh_execute {
+sub remote_execute {
 	my $self = shift;
 	my $cmd = shift;
 	my @outlines;
 	my @errlines;
 
-	dolog("ssh_execute(".$cmd.") start");
+	dolog("remote_execute(".$cmd.") start");
 
 	my $mask = POSIX::SigSet->new( SIGALRM );
 	my $pid;
@@ -404,9 +405,9 @@ sub ssh_execute {
 
 	my $rc = 0;
 	eval {
-		alarm($self->{'ssh'}->{'timeout'});
+		alarm($self->{'dict'}->{'ssh'}->{'timeout'});
 
-		my $ssh_cmd = 'ssh -tt -S '."$self->{'ssh'}->{'socket'}".' -l '."$self->{'ssh'}->{'user'}".' '."$self->{'ssh'}->{'hostname'}".' "(sudo -k -S -p sudo_password: -- '.$cmd.')"';
+		my $ssh_cmd = 'ssh -tt -S '.$self->{'dict'}->{'ssh'}->{'socket'}.' -l '.$self->{'dict'}->{'ssh'}->{'user'}.' -p '.$self->{'dict'}->{'ssh'}->{'port'}.' '.$self->{'dict'}->{'ssh'}->{'hostname'}.' "(sudo -k -S -p sudo_password: -- '.$cmd.')"';
 		dolog("ssh_cmd: ".$ssh_cmd);
 
 		$pid = open3(*IN, *OUT, *ERR, $ssh_cmd);
@@ -445,7 +446,7 @@ sub ssh_execute {
 
 		$SIG{CHLD} = \&REAPER;
 
-		print IN $self->{'sudo'}->{'password'};
+		print IN $self->{'dict'}->{'sudo'}->{'password'};
 		@outlines = <OUT>;
 		@errlines = <ERR>;
 		dolog("STDOUT:\n".join(" ",@outlines));
@@ -469,7 +470,7 @@ sub ssh_execute {
 		warning("Something is wrong. SSH execution return code is not 0! ($cmd)");
 	}
 
-	dolog("ssh_execute() end");
+	dolog("remote_execute() end");
 	return (\@outlines, \@errlines, $rc);
 }
 
@@ -493,7 +494,7 @@ sub local_execute {
 
 	my $rc = 0;
 	eval {
-		alarm($self->{'ssh'}->{'timeout'});
+		alarm($self->{'dict'}->{'ssh'}->{'timeout'});
 
 		my $local_cmd = 'sudo -k -S -p sudo_password: -- '.$cmd;
 		dolog("local_cmd: ".$local_cmd);
@@ -505,7 +506,7 @@ sub local_execute {
 
 		$SIG{CHLD} = \&REAPER;
 
-		print IN $self->{'sudo'}->{'password'}; 
+		print IN $self->{'dict'}->{'sudo'}->{'password'}; 
 		@outlines = <OUT>;
 		@errlines = <ERR>;
 		dolog("STDOUT:\n".join(" ",@outlines));
@@ -542,10 +543,10 @@ sub cmd_execute {
 
 	my ($outlines, $errlines, $rc);
 
-	if (get_location($self) eq "LOCAL") {
+	if ($self->{'dict'}->{'ssh'}->{'location'} eq "LOCAL") {
 		($outlines, $errlines, $rc) = local_execute($self, $cmd);
 	} else {
-		($outlines, $errlines, $rc) = ssh_execute($self, $cmd);
+		($outlines, $errlines, $rc) = remote_execute($self, $cmd);
 	}
 
 	dolog("cmd_execute() end");
