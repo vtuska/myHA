@@ -1,6 +1,5 @@
 #!/usr/bin/perl -w
 
-use Data::Dumper;
 ###
 #
 # This file is part of myHA. Developed by: vtuska
@@ -48,9 +47,6 @@ use Data::Dumper;
 use strict;
 use warnings;
 
-#check db state before any activity (too many running sql queries...?)
-#db node protection when something goes wrong? read_only status, vip/nat removal?
-
 use DBI;
 use Term::ANSIColor qw(:constants);
 use POSIX ':signal_h';
@@ -61,10 +57,6 @@ $|=1;
 
 my (@pnodes, @anodes, $pnode, $anode, $pdict, $adict);
 my ($outlines, $errlines, $rc);
-
-my $_NODES = 0;
-my $_NODE_ACTIVE = 1;
-my $_NODE_PASSIVE = 2;
 
 sub usage {
         print "Usage: $0 -c config.pl [-s no_ssh|-m no_mysql] [-a active_node -p passive_node] [-f] [-h]\n";
@@ -83,7 +75,6 @@ sub usage {
 my %options;
 getopts("c:a:p:smfxh",\%options);
 
-# print usage
 usage() if $options{h} || !%options ;
 
 my $cfg;

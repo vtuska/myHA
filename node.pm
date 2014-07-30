@@ -54,7 +54,6 @@ sub new {
 	my $cfgnode = shift;
 	my $key = shift;
 	my $nodeconfig = $cfgnode->{$key};
-	#my $serviceconfig = $cfg->{'service'};
 	my $checkflag = shift;
 
 	if (!defined($checkflag)) {
@@ -74,7 +73,6 @@ sub new {
 		error($self,"Missing node $key");
 	}
 
-	#$self->{'dict'}->{'service'}->{'virts'} = {%{$cfg->{'db'}}};
 	$self->{'dict'}->{'db'} = {%{$nodeconfig->{'db'}}};
 	$self->{'dict'}->{'db'}->{'dsn'} = "DBI:mysql:database=".$nodeconfig->{'db'}->{'database'}.";host=".$nodeconfig->{'db'}->{'hostname'}.";port=".$nodeconfig->{'db'}->{'port'};
 	if (!defined($nodeconfig->{'db'}->{'password'})) {
@@ -95,7 +93,6 @@ sub new {
 			my $dict;
 			$dict = db_get_dict($self, 'select @@global.read_only,@@global.server_id');
 			$self->{'dict'}->{'db'}->{'server_id'} = $dict->[0]->{'@@global.server_id'};
-			#dolog($self,'@@global.read_only: ');
 			dolog($self,'Checking read_only status ...', 1);
 			if ($dict->[0]->{'@@global.read_only'} == 1) {
 				dolog($self,'This is a PASSIVE member!', 1);
@@ -103,15 +100,6 @@ sub new {
 			} else {
 				dolog($self,'This is an ACTIVE member!', 1);
 				$self->{'dict'}->{'db'}->{'type'} = 'ACTIVE';
-
-				#dolog($self,'Checking the virtual ip address/port accessibility of the ACTIVE member!', 1);
-				#foreach my $key (sort keys %{$serviceconfig->{'virts'}}) {
-					#dolog($key.':'.$serviceconfig->{'virts'}->{$key}, 1);
-					#my $dsn = "DBI:mysql:database=$nodeconfig->{'db'}->{'database'};host=$key;port=$serviceconfig->{'virts'}->{$key}";
-					#my $dbconnect = DBI->connect($dsn, $self->{'dict'}->{'db'}->{'user'}, $self->{'dict'}->{'db'}->{'password'}, {'RaiseError' => 1, 'mysql_auto_reconnect' => 0});
-					#
-					#$dbconnect->disconnect();
-				#}
 			}
 			dolog($self,"($dict->[0]->{'@@global.read_only'},$dict->[0]->{'@@global.server_id'})");
 		} else {
@@ -790,7 +778,6 @@ sub nat_unset {
 		my $regex = $tmp.'\s+tcp\s+dpt:'.$virts->{$tmp}->{'port'}.'\s+redir\s+ports\s+'.$self->{'dict'}->{'db'}->{'port'};
 		foreach my $ttmp (@{$outlines}) {
 			if ($ttmp =~ /$regex/) {
-				#push @wanted, [ $tmp, $virts->{$tmp}->{'port'}, $self->{'dict'}->{'db'}->{'port'} ];
 				$ips->{$tmp} = 1;
 			}
 		}
@@ -801,7 +788,6 @@ sub nat_unset {
 		}
 	}
 
-	#foreach my $tmp (@wanted) {
 	foreach my $tmp (sort keys %{$ips}) {
 		my $message = 'Unconfigure NAT: '.$tmp.':'.$virts->{$tmp}->{'port'}.'->'.$self->{'dict'}->{'db'}->{'port'};
 		if ($doit) {
@@ -827,7 +813,6 @@ sub vip_set {
 	my $_RC = 0;
 
 	my ($outlines, $errlines, $rc);
-	#my @wanted;
 	$self->dolog('db_vip_set() start.');
 	($outlines, $errlines, $rc) = $self->cmd_execute("/sbin/ip addr list");
 	if ($rc != 0) {
@@ -840,7 +825,6 @@ sub vip_set {
 		if ($tmp =~ /inet\s(\S+)\s/) {
 			my $ip = (split('/',$1))[0];
 			$ips->{$ip} = 1;
-			#push @ips, $ip;
 		}
 	}
 
@@ -881,7 +865,6 @@ sub vip_unset {
 	my $_RC = 0;
 
 	my ($outlines, $errlines, $rc);
-	#my @wanted;
 	$self->dolog('db_vip_unset() start.');
 	($outlines, $errlines, $rc) = $self->cmd_execute("/sbin/ip addr list");
 	if ($rc != 0) {
@@ -894,7 +877,6 @@ sub vip_unset {
 		if ($tmp =~ /inet\s(\S+)\s/) {
 			my $ip = (split('/',$1))[0];
 			$ips->{$ip} = 1;
-			#push @ips, $ip;
 		}
 	}
 
