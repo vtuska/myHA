@@ -1,5 +1,6 @@
 #!/usr/bin/perl -w
 
+use Data::Dumper;
 ###
 #
 # This file is part of myHA. Developed by: vtuska
@@ -42,205 +43,191 @@
 # 
 # The recommended type of the MySQL HA configuration: master(active)-master(passive)
 # 
-# Usage:
-# 
-# Preparation:
-# 
-# ssh -A [ master/slave ]
-# 
-# sudo -s -E
-# 
-# cd myHA
-# 
-# vi config.pl
-# 
-# Dry run:
-# 
-# ./myHA.pl config.pl
-# 
-# Live run:
-# 
-# ./myHA.pl config.pl --yes-I-know-what-I-am-doing
 ###
 
 use strict;
 use warnings;
 
 #check db state before any activity (too many running sql queries...?)
+#db node protection when something goes wrong? read_only status, vip/nat removal?
 
 use DBI;
 use Term::ANSIColor qw(:constants);
 use POSIX ':signal_h';
+use Getopt::Std;
 use node;
 
 $|=1;
 
-if ($#ARGV < 0) {
-	node::dolog("Usage: ./myHA.pl [config file] [--yes-I-know-what-I-am-doing]", 1);
-	exit(0);
-}
-
-require $ARGV[0];
-my $cfg = get_config();
-
-my ($pnode, $anode, $pdict, $adict);
+my (@pnodes, @anodes, $pnode, $anode, $pdict, $adict);
 my ($outlines, $errlines, $rc);
 
-my $i = 0;
-foreach my $node (@{$cfg->{'nodes'}}) {
-	my $dbnode = node->new($node, $i);
-	node::dolog('General Information (node'.$i.')', 1);
-	$dbnode->db_info;
+my $_NODES = 0;
+my $_NODE_ACTIVE = 1;
+my $_NODE_PASSIVE = 2;
 
-	my $dict;
-	node::dolog('Checking slave status (node'.$i.')...', 1);
-	$dict = $dbnode->db_get_dict('SHOW SLAVE STATUS');
+sub usage {
+        print "Usage: $0 -c config.pl [-s no_ssh|-m no_mysql] [-a active_node -p passive_node] [-f] [-h]\n";
+        print "\t-c: Configuration file.\n";
+        print "\t-s: No ssh check on the passive node.\n";
+        print "\t-m: No mysql check on the passive node.\n";
+        print "\t-a: Active node.\n";
+        print "\t-p: Passive node.\n";
+        print "\t-f: Force/Fix.\n";
+        print "\t-x: Flip-Flop.\n";
+        print "\t-h: Show help.\n";
 
-	$dbnode->db_check_dict($dict->[0],'Slave_IO_Running', 'Yes');
-	$dbnode->db_check_dict($dict->[0],'Slave_SQL_Running', 'Yes');
-	$dbnode->db_check_dict($dict->[0],'Relay_Master_Log_File', $dict->[0]->{'Master_Log_File'});
-	$dbnode->db_check_dict($dict->[0],'Exec_Master_Log_Pos', $dict->[0]->{'Read_Master_Log_Pos'});
-
-	$dict = $dbnode->db_get_dict('select @@global.read_only');
-	node::dolog('@@global.read_only: ');
-	node::dolog('Checking read_only status (node'.$i.')...', 1);
-	if ($dict->[0]->{'@@global.read_only'} == 1) {
-		node::dolog('This is a PASSIVE member!', 1);
-		$pnode=$dbnode;
-	} else {
-		node::dolog('This is an ACTIVE member!', 1);
-		$anode=$dbnode;
-	}
-	node::dolog("($dict->[0]->{'@@global.read_only'})");
-	
-	$i += 1;
-}
-
-if ($i>2) { node:error("Too many nodes in the configuration hash! (Only 2 allowed)"); }
-if (!defined($anode)) { node::error("Missing active node!"); }
-if (!defined($pnode)) { node::error("Missing passive node!"); }
-
-###
-if (($#ARGV > 0) && ($ARGV[1] eq "--yes-I-know-what-I-am-doing" )) {
-	node::dolog("Fasten your seatbelts!", 1);
-} else {
-	node::dolog("Phew, It was a dry run!", 1);
 	exit(0);
 }
-###
 
-node::dolog("Current threadid(active): ".$anode->get_dict('db')->{'dbh'}->{'mysql_thread_id'});
-node::dolog('Trying to get read lock on the active node...', 1);
-$anode->db_read_lock(0,1);
-$anode->db_read_lock(1,0);
-node::dolog('Read lock acquired!', 1);
+my %options;
+getopts("c:a:p:smfxh",\%options);
 
-node::dolog('Setting read only mode on the active node...', 1);
-node::dolog('set @@global.read_only=1', 1);
-$anode->db_execute('set @@global.read_only=1', 1);
-if ($anode->db_get_dict('select @@global.read_only')->[0]->{'@@global.read_only'}) {
-	node::dolog('Read only mode has been set on the active node!', 1);
+# print usage
+usage() if $options{h} || !%options ;
+
+my $cfg;
+if ($options{c}) {
+	require $options{c};
+	$cfg = get_config();
+}
+
+if (scalar keys %{$cfg->{'nodes'}} != 2) {
+	node::error(undef,"Node number != 2 in config hash!"); 
+}
+
+if ($options{a}) {
+	my $key = $options{a};
+	$anode = node->new($cfg->{'nodes'}, $key);
+}
+
+my $checkpflag = $node::_CHECK_BITMASK;
+
+if ($options{m}) {
+	$checkpflag = $checkpflag & ($node::_CHECK_BITMASK & ~$node::_CHECK_MYSQL); 
+}
+if ($options{s}) {
+	$checkpflag = $checkpflag & ($node::_CHECK_BITMASK & ~$node::_CHECK_SH);
+}
+
+if ($options{p}) {
+	my $key = $options{p};
+	$pnode = node->new($cfg->{'nodes'}, $key, $checkpflag);
 } else {
-	node::error('Can not set @@global.read_only to 1!');
+	foreach my $key (sort keys %{$cfg->{'nodes'}}) {
+		if (defined($anode) && !(defined($pnode))) {
+			if  ($key ne $anode->{'dict'}->{'node'}) {
+				$pnode = node->new($cfg->{'nodes'}, $key, $checkpflag);
+				last;
+			}
+		} else {
+			my $tmpnewnode = node->new($cfg->{'nodes'}, $key);
+			if ($tmpnewnode->{'dict'}->{'db'}->{'type'} eq 'ACTIVE') {
+				$anode = $tmpnewnode;
+			} else {
+				$pnode = $tmpnewnode;
+			}
+		}
+	}
 }
 
-node::dolog("Current threadid(passive): ".$pnode->get_dict('db')->{'dbh'}->{'mysql_thread_id'});
-node::dolog('Trying to get read lock on the passive node...', 1);
-$pnode->db_read_lock(0,1);
-$pnode->db_read_lock(1,0);
-node::dolog('Read lock acquired!', 1);
-
-$adict = $anode->db_get_dict('SHOW MASTER STATUS');
-$pdict = $pnode->db_get_dict('SHOW SLAVE STATUS');
-
-node::dolog('Checking replication threads on the passive node', 1);
-$pnode->db_check_dict($pdict->[0],'Slave_IO_Running', 'Yes', 1);
-$pnode->db_check_dict($pdict->[0],'Slave_SQL_Running', 'Yes', 1);
-
-my $lagretry = $cfg->{'service'}->{'lagretry'};
-
-node::dolog('Checking replication state on the passive node...', 1);
-do {
-	sleep($cfg->{'service'}->{'lagsleep'});
-	$rc = 0;
-	$rc += $pnode->db_check_dict($pdict->[0],'Relay_Master_Log_File', $pdict->[0]->{'Master_Log_File'});
-	$rc += $pnode->db_check_dict($pdict->[0],'Exec_Master_Log_Pos', $pdict->[0]->{'Read_Master_Log_Pos'});
-	$rc += $pnode->db_check_dict($pdict->[0],'Master_Log_File', $adict->[0]->{'File'});
-	$rc += $pnode->db_check_dict($pdict->[0],'Read_Master_Log_Pos', $adict->[0]->{'Position'});
-	node::dolog("Rc: ".$rc." Retry: ".$lagretry);
-	$lagretry -= 1;
-} while(($rc != 0) && ($lagretry != 0));
-
-if ($rc) {
-	$pnode->db_check_dict($pdict->[0],'Relay_Master_Log_File', $pdict->[0]->{'Master_Log_File'}, 1);
-	$pnode->db_check_dict($pdict->[0],'Exec_Master_Log_Pos', $pdict->[0]->{'Read_Master_Log_Pos'}, 1);
-	$pnode->db_check_dict($pdict->[0],'Master_Log_File', $adict->[0]->{'File'}, 1);
-	$pnode->db_check_dict($pdict->[0],'Read_Master_Log_Pos', $adict->[0]->{'Position'}, 1);
-}
-node::dolog('Replication state: Synched!', 1);
-
-$anode->db_get_dict('SHOW BINARY LOGS');
-$anode->db_get_dict('SHOW MASTER STATUS');
-$anode->db_get_dict('SHOW SLAVE STATUS');
-$pnode->db_get_dict('SHOW BINARY LOGS');
-$pnode->db_get_dict('SHOW MASTER STATUS');
-$pnode->db_get_dict('SHOW SLAVE STATUS');
-
-node::dolog('Passive node ip list:');
-($outlines, $errlines, $rc) = $pnode->cmd_execute("/sbin/ip add list");
-if ($rc != 0) {
-	node::error("Can't get ip addr list!");
+if ($options{p} && $options{a} && ($options{a} eq $options{p})) {
+	node::error(undef,"Active node can't be passive node at the same time!");
 }
 
-node::dolog("Release virtual ip address on the active node...", 1);
-($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/ip addr list');
-
-foreach my $tmp (@{$cfg->{'service'}->{'virts'}}) {
-	($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/ip addr del '.$tmp->{'virtip'}.'/'.$tmp->{'virtnet'}.' dev '.$anode->get_dict('db')->{'virtif'});
+if (!($options{a}) && $options{x}) {
+	my $tmpnode = $anode;
+	$anode = $pnode;
+	$pnode = $tmpnode;
 }
 
-node::dolog('Setting read/write mode on the (ex)passive node...', 1);
-node::dolog('set @@global.read_only=0', 1);
-$pnode->db_execute('set @@global.read_only=0');
-if ($pnode->db_get_dict('select @@global.read_only')->[0]->{'@@global.read_only'} == 0) {
-	node::dolog("Read/write mode has been set on the (ex)passive node!", 1);
+if (!($anode) || !($pnode)) {
+	node::error(undef,"I can't figure out ACTIVE/PASSIVE nodes automagically! Please be more specific and help a bit with proper configuration parameters!");
+}
+
+if($anode->{'dict'}->{'db'}->{'type'} eq 'ACTIVE') {
+	if ($checkpflag & $node::_CHECK_MYSQL) {
+		if ($pnode->{'dict'}->{'db'}->{'type'} eq 'ACTIVE') {
+			node::error(undef,"Both node is ACTIVE!");
+		}
+	}
+
+	if ($checkpflag & $node::_CHECK_SH) {
+		if ($pnode->nat_unset($cfg->{'service'}->{'virts'},$options{f}) | $pnode->vip_unset($cfg->{'service'}->{'virts'},$options{f})) {
+			$pnode->dolog("Do you want to continue [y/n]?",1);
+			my $question = (<STDIN>);
+			if ($question ne "y\n") {
+				exit(-1);
+			}
+		}
+	}
+
+	$anode->vip_set($cfg->{'service'}->{'virts'},$options{f});
+	$anode->nat_set($cfg->{'service'}->{'virts'},$options{f});
+
+	foreach my $key (sort keys %{$cfg->{'service'}->{'virts'}}) {
+		my $tmpnodes = {};
+		$tmpnodes->{$key}->{'db'} = {%{$anode->{'dict'}->{'db'}}};
+		$tmpnodes->{$key}->{'db'}->{'hostname'} = $key;
+		$tmpnodes->{$key}->{'db'}->{'port'} = $cfg->{'service'}->{'virts'}->{$key}->{'port'};
+
+		my $checkflag = $node::_CHECK_BITMASK & ~$node::_CHECK_SH & ~$node::_CHECK_FATAL;
+		my $tmpnode = node->new($tmpnodes, $key, $checkflag);
+
+		if (defined($tmpnode->{'dict'}->{'db'}->{'dbh'})) {
+			$tmpnode->db_info();
+			if ($anode->{'dict'}->{'db'}->{'server_id'} ne $tmpnode->{'dict'}->{'db'}->{'server_id'}) {
+				$tmpnode->error("Something is wrong! Different server_ids!");
+			} else {
+				$tmpnode->dolog('VIP Connection OK: '.$tmpnode->{'dict'}->{'db'}->{'hostname'}.':'.$tmpnode->{'dict'}->{'db'}->{'port'}, 1);
+			}
+		} else {
+			$tmpnode->warning("Can't connect to VIP: ".$tmpnode->{'dict'}->{'db'}->{'hostname'}.':'.$tmpnode->{'dict'}->{'db'}->{'port'});
+			my $question = (<STDIN>);
+			if ($question ne "y\n") {
+				exit(-1);
+			}
+		}
+	}
 } else {
-	node::error('Can not set @@global.read_only to 0!');
-}
+	if ($checkpflag & $node::_CHECK_MYSQL) {
+		if ( $pnode->db_set_read_lock($options{f}) |
+			$pnode->db_set_passive($options{f}) |
+			$anode->db_set_read_lock($options{f}) ) {
+				$pnode->warning("Do you want to continue [y/n]?");
+				my $question = (<STDIN>);
+				if ($question ne "y\n") {
+					exit(-1);
+				}
+		}
 
-node::dolog("Setting virtual ip address on the (ex)passive node...", 1);
-($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/ip addr list');
-foreach my $tmp (@{$cfg->{'service'}->{'virts'}}) {
-	($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/ip addr add '.$tmp->{'virtip'}.'/'.$tmp->{'virtnet'}.' dev '.$pnode->get_dict('db')->{'virtif'}.' label '.$pnode->get_dict('db')->{'virtlabel'});
-	($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/arping -A -c 4 -I '.$pnode->get_dict('db')->{'virtif'}.' '.$tmp->{'virtip'});
-
-	node::dolog('Checking virtual ip address accessibility from the (ex)active node...', 1);
-	($outlines, $errlines, $rc) = $anode->cmd_execute('/bin/ping -c 1 '.$tmp->{'virtip'});
-	if ($rc != 0) {
-		node::error("Check the virtip accessibility ASAP!");
+		$pnode->db_get_replication_info();
+		$anode->db_get_replication_info();
+		if ($anode->db_check_replication_sync($pnode,$cfg->{'service'}->{'lagretry'},$cfg->{'service'}->{'lagsleep'},$options{f}) != 0) {
+			$pnode->warning("Do you want to continue [y/n]?");
+			my $question = (<STDIN>);
+			if ($question ne "y\n") {
+				exit(-1);
+			}
+		}
 	}
-
-	($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/arp -an|grep '.$tmp->{'virtip'});
-
-	if (defined($tmp->{'virtport'}) && ($pnode->get_dict('db')->{'port'} ne $tmp->{'virtport'})) {
-		node::dolog('Setting port redirection for non standard port on the (ex)passive node...', 1);
-		($outlines, $errlines, $rc) = $pnode->cmd_execute('/sbin/iptables -A PREROUTING -t nat -i '.$pnode->get_dict('db')->{'virtif'}.' -p tcp --dst '.$tmp->{'virtip'}.' --dport '.$tmp->{'virtport'}.' -j REDIRECT --to-port '.$pnode->get_dict('db')->{'port'});
+	
+	if ($checkpflag & $node::_CHECK_SH) {
+		$pnode->vip_unset($cfg->{'service'}->{'virts'},$options{f});
+		$pnode->nat_unset($cfg->{'service'}->{'virts'},$options{f});
 	}
-	if (defined($tmp->{'virtport'}) && ($anode->get_dict('db')->{'port'} ne $tmp->{'virtport'})) {
-		node::dolog('Removing port redirection for non standard port on the (ex)active node...', 1);
-		($outlines, $errlines, $rc) = $anode->cmd_execute('/sbin/iptables -D PREROUTING -t nat -i '.$anode->get_dict('db')->{'virtif'}.' -p tcp --dst '.$tmp->{'virtip'}.' --dport '.$tmp->{'virtport'}.' -j REDIRECT --to-port '.$anode->get_dict('db')->{'port'});
+	
+	$anode->vip_set($cfg->{'service'}->{'virts'},$options{f});
+	$anode->nat_set($cfg->{'service'}->{'virts'},$options{f});
+	$anode->db_set_active($options{f});
+
+	if ($checkpflag & $node::_CHECK_MYSQL) {
+		$pnode->dolog("Kill mysql connections? [if yes then type YES<Enter>]", 1);
+		my $question = <STDIN>;
+		if ($question eq "YES\n") {
+			$pnode->db_kill();
+		}
 	}
-}
-
-print '', RESET;
-#node::dolog("Sleeping...", 1);
-#sleep(1);
-node::dolog("Kill mysql connections on the (ex)active node? [if yes then type YES<Enter>]", 1);
-my $cont = <STDIN>;
-chomp($cont);
-
-if ($cont eq "YES") {
-	$anode->db_kill();
 }
 
 node::purge();

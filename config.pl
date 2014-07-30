@@ -24,13 +24,14 @@ use warnings;
 
 my $cfg = {
 		'service' => {
-			'virts' => [{ 'virtip' => '172.16.72.100', 'virtnet' => '24', 'virtport' => 3306 },
-					{ 'virtip' => '172.16.72.101', 'virtnet' => '24', 'virtport' => 3306 }],
+			'virts' => { '172.16.72.100' => { 'netmask' => 24, 'port' => 3306 }, 
+					'172.16.72.101' => { 'netmask' => 24, 'port' => 3306 } 
+				},
 			'lagretry' => 3,
 			'lagsleep' => 2
 		},
-		nodes => [
-			{
+		nodes => {
+			'mysql0' => {
 				'db' => {
 					'hostname' => '172.16.72.136',
 					'port' => 3306,
@@ -52,7 +53,7 @@ my $cfg = {
 					'password' => 'sasword'
 				}
 			},
-			{
+			'mysql1' => {
 				'db' => {
 					'hostname' => '172.16.72.137',
 					'port' => 4204,
@@ -74,7 +75,7 @@ my $cfg = {
 					'password' => 'sasword'
 				}
 			},
-		]
+		}
 };
 
 sub get_config {
