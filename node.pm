@@ -783,12 +783,11 @@ sub nat_unset {
 		}
 		if (!($ips->{$tmp})) {
 			$self->dolog('NAT rule is not set: '.$tmp.':'.$virts->{$tmp}->{'port'}."->".$self->{'dict'}->{'db'}->{'port'}, 1);
-		} else {
-			$self->dolog('NAT rule is set: '.$tmp.':'.$virts->{$tmp}->{'port'}."->".$self->{'dict'}->{'db'}->{'port'}, 1);
 		}
 	}
 
 	foreach my $tmp (sort keys %{$ips}) {
+		$self->dolog('NAT rule is set: '.$tmp.':'.$virts->{$tmp}->{'port'}."->".$self->{'dict'}->{'db'}->{'port'}, 1);
 		my $message = 'Unconfigure NAT: '.$tmp.':'.$virts->{$tmp}->{'port'}.'->'.$self->{'dict'}->{'db'}->{'port'};
 		if ($doit) {
 			($outlines, $errlines, $rc) = $self->cmd_execute('/sbin/iptables -D PREROUTING -t nat -i '.$self->{'dict'}->{'db'}->{'virtif'}.' -p tcp --dst '.$tmp.' --dport '.$virts->{$tmp}->{'port'}.' -j REDIRECT --to-port '.$self->{'dict'}->{'db'}->{'port'});
