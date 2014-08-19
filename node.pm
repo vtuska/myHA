@@ -81,6 +81,7 @@ sub new {
 		$self->{'dict'}->{'db'}->{'password'} = <STDIN>;
 		chomp($self->{'dict'}->{'db'}->{'password'});
 		system('/bin/stty', 'echo');
+		print "\n";
 	}
 
 	if (!defined($nodeconfig->{'db'}->{'virtlabel'})) {
@@ -118,6 +119,7 @@ sub new {
 			system('/bin/stty', '-echo');
 			$self->{'dict'}->{'sudo'}->{'password'} = <STDIN>;
 			system('/bin/stty', 'echo');
+			print "\n";
 		} else {
 			$self->{'dict'}->{'sudo'}->{'password'} .= "\n";
 		}
@@ -607,7 +609,7 @@ sub db_check_replication_sync {
 
 	my ($adict, $pdict);
 
-	$self->dolog('db_get_replication_info() start.');
+	$self->dolog('db_get_replication_sync() start.');
 
 	$adict = $self->db_get_dict('SHOW SLAVE STATUS');
 	$pdict = $pnode->db_get_dict('SHOW MASTER STATUS');
@@ -641,7 +643,7 @@ sub db_check_replication_sync {
 		$self->dolog('Replication state: Synched!', 1);
 	}
 
-	$self->dolog('db_get_replication_info() end.');
+	$self->dolog('db_get_replication_sync() end.');
 	return $_RC;
 }
 
@@ -756,7 +758,7 @@ sub nat_set {
 			$self->dolog('NAT rule is set: '.$tmp.':'.$virts->{$tmp}->{'port'}."->".$self->{'dict'}->{'db'}->{'port'}, 1);
 		}
 	}
-	$self->dolog('db_nat_set() start.');
+	$self->dolog('db_nat_set() end.');
 	return $_RC;
 }
 sub nat_unset {
@@ -853,7 +855,7 @@ sub vip_set {
 			$self->dolog('VIP is set: '.$tmp.'/'.$virts->{$tmp}->{'netmask'}.'->'.$self->{'dict'}->{'db'}->{'virtif'}.'->'.$self->{'dict'}->{'db'}->{'virtlabel'}, 1);
 		}
 	}
-	$self->dolog('db_vip_set() start.');
+	$self->dolog('db_vip_set() end.');
 	return $_RC;
 }
 
