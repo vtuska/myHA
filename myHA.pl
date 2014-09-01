@@ -174,6 +174,7 @@ if($anode->{'dict'}->{'db'}->{'type'} eq 'ACTIVE') {
 			}
 		} else {
 			$tmpnode->warning("Can't connect to VIP: ".$tmpnode->{'dict'}->{'db'}->{'hostname'}.':'.$tmpnode->{'dict'}->{'db'}->{'port'});
+			$tmpnode->warning("Do you want to continue [y/n]?");
 			my $question = (<STDIN>);
 			if ($question ne "y\n") {
 				exit(-1);
